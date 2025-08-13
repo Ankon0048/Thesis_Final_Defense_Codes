@@ -1,0 +1,19 @@
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+path: D:\Thesis\dataset\dataset # dataset root dir
+train: D:\Thesis\dataset\dataset\images\train # train images (relative to 'path') 4 images
+val: D:\Thesis\dataset\dataset\images\val # val images (relative to 'path') 4 images
+test: D:\Thesis\dataset\dataset\images\test # test images (optional)
+
+# Classes (80 COCO classes)
+names:
+    0: Caption
+    1: Footnote
+    2: Formula
+    3: List-item
+    4: Page-footer
+    5: Page-header
+    6: Picture
+    7: Section-header
+    8: Table
+    9: Text
+    10: Title

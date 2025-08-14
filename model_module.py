@@ -41,20 +41,20 @@ input_image_path = ""
 class Models:
     def __init__(self):
         self.yolo_model = YOLO("kaggle/input/weights/last_100.pt")
-        # self.hvp_model = SimpleCNN().to(DEVICE)
-        # self.hvp_model.load_state_dict(torch.load("kaggle/input/weights/final_model_weights_HvP.pth", map_location=DEVICE))
-        # self.printed_processor = TrOCRProcessor.from_pretrained(printed_model_id)
-        # self.printed_model = VisionEncoderDecoderModel.from_pretrained(printed_model_id).to(DEVICE)
-        # self.handwritten_processor = TrOCRProcessor.from_pretrained(hand_written_model_id)
-        # self.handwritten_model = VisionEncoderDecoderModel.from_pretrained(hand_written_model_id).to(DEVICE)
-        # self.t5_tokenizer = T5Tokenizer.from_pretrained("vennify/t5-base-grammar-correction")
-        # self.t5_model = T5ForConditionalGeneration.from_pretrained("vennify/t5-base-grammar-correction").to(DEVICE)
-        #     # Test transforms
-        # self.test_transform = transforms.Compose([
-        #     transforms.Resize((IMG_SIZE, IMG_SIZE)),
-        #     transforms.ToTensor(),
-        #     transforms.Normalize(mean=[0.5], std=[0.5])
-        # ])
+        self.hvp_model = SimpleCNN().to(DEVICE)
+        self.hvp_model.load_state_dict(torch.load("kaggle/input/weights/final_model_weights_HvP.pth", map_location=DEVICE))
+        self.printed_processor = TrOCRProcessor.from_pretrained(printed_model_id)
+        self.printed_model = VisionEncoderDecoderModel.from_pretrained(printed_model_id).to(DEVICE)
+        self.handwritten_processor = TrOCRProcessor.from_pretrained(hand_written_model_id)
+        self.handwritten_model = VisionEncoderDecoderModel.from_pretrained(hand_written_model_id).to(DEVICE)
+        self.t5_tokenizer = T5Tokenizer.from_pretrained("vennify/t5-base-grammar-correction")
+        self.t5_model = T5ForConditionalGeneration.from_pretrained("vennify/t5-base-grammar-correction").to(DEVICE)
+            # Test transforms
+        self.test_transform = transforms.Compose([
+            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5])
+        ])
 
 
     def seperate_handwritten_printed_using_yolo(self, image_path, folder_name):

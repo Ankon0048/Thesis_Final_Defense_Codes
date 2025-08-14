@@ -16,7 +16,6 @@ yolo_images = []
 
 selected_image_path = None
 line_segment_images = []
-text_queue = Queue()
 models = None
 
 def refresh_ui():
@@ -63,9 +62,80 @@ def load_models_background():
     # After loading, update status in main thread
     root.after(0, lambda: status_label.config(text="✅ Models loaded successfully!"))
 
-def clear_grid_frame(frame):
-    for widget in frame.winfo_children():
-        widget.destroy()
+def generate_ocr_result():
+    global selected_image_path
+
+    if not selected_image_path or not os.path.isdir(selected_image_path):
+        status_label.config(text="⚠ Please select a valid folder.")
+        return
+
+    # Create result display window
+    ocr_window = Toplevel(root)
+    ocr_window.title("OCR Results")
+    ocr_window.geometry("600x400")
+
+    # Scrollable text box
+    text_area = tk.Text(ocr_window, wrap="word", font=("Courier", 12))
+    text_area.pack(fill="both", expand=True)
+    text_area.insert("end", "🔍 Starting OCR processing...\n\n")
+
+    # Queue for communication between threads
+    result_queue = Queue()
+
+    def worker():
+        """Background worker to process OCR"""
+        file_paths = []
+        for root_dir, dirs, files in os.walk(selected_image_path):
+            for filename in files:
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif')):
+                    file_paths.append(os.path.join(root_dir, filename))
+
+        for path in file_paths:
+            try:
+                # Detect printed or handwritten
+                if models.predict_HvP(path) == 1:
+                    raw_text = models.run_trOCR(models.printed_model, models.printed_processor, path)
+                    category = "printed"
+                else:
+                    raw_text = models.run_trOCR(models.handwritten_model, models.handwritten_processor, path)
+                    category = "handwritten"
+
+                # Fix casing and punctuation
+                fixed_text = models.restore_case_and_punctuation(raw_text)
+                final_text = f"[{category}] {fixed_text}"
+                
+                # Put into queue for UI update
+                result_queue.put(final_text)
+
+            except Exception as e:
+                result_queue.put(f"⚠ Error processing {os.path.basename(path)}: {e}")
+
+        # Mark done
+        result_queue.put(None)
+
+    def poll_queue():
+        """Check queue for new results and update UI"""
+        try:
+            while True:
+                item = result_queue.get_nowait()
+                if item is None:
+                    text_area.insert("end", "\n✅ OCR processing complete.\n")
+                    text_area.see("end")
+                    return
+                else:
+                    text_area.insert("end", item + "\n\n")
+                    text_area.see("end")
+        except:
+            pass
+        ocr_window.after(200, poll_queue)
+
+    # Start background thread
+    threading.Thread(target=worker, daemon=True).start()
+
+    # Start polling queue
+    poll_queue()
+
+    
 
 def process_ocr_worker(file_paths):
     """Background thread worker: process OCR and put results in queue."""
@@ -78,83 +148,13 @@ def process_ocr_worker(file_paths):
             category = "handwritten"
         fixed_text = models.restore_case_and_punctuation(raw_text)
         final_text = f"({category}) {fixed_text}"
-        text_queue.put((path, final_text))
-    # Signal that processing is done
-    text_queue.put(("__done__", None))
 
-def update_text_display_periodically(text_frame, text_window):
-    """Main thread: periodically check queue and update text display."""
-    try:
-        while True:
-            path, text = text_queue.get_nowait()
-            if path == "__done__":
-                status_label.config(text="✅ Line segmentation and OCR complete!")
-                return  # Stop polling
-            text_label = tk.Label(text_frame, text=text, wraplength=400, justify="center", bg="white")
-            text_label.pack(padx=5, pady=5)
-            text_frame.update_idletasks()
-            text_window.update_idletasks()
-    except:
-        pass
-    root.after(100, update_text_display_periodically, text_frame, text_window)
-
-def display_images_immediately(file_paths):
-    global line_segment_images
-    line_segment_images.clear()
-
-    grid_window = Toplevel(root)
-    grid_window.title("Line Segmentation Results")
-    grid_window.geometry("800x600")
-
-    canvas = tk.Canvas(grid_window)
-    scrollbar = tk.Scrollbar(grid_window, orient="vertical", command=canvas.yview)
-    grid_frame = tk.Frame(canvas)
-
-    canvas.configure(yscrollcommand=scrollbar.set)
-    scrollbar.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
-    canvas.create_window((0, 0), window=grid_frame, anchor="nw")
-
-    def configure_canvas(event):
-        canvas.configure(scrollregion=canvas.bbox("all"))
-    grid_frame.bind("<Configure>", configure_canvas)
-
-    cols = 1
-    for i, path in enumerate(file_paths):
-        img = Image.open(path)
-        img.thumbnail((400, 400), Image.LANCZOS)
-        img_tk = ImageTk.PhotoImage(img)
-        img_label = tk.Label(grid_frame, image=img_tk, bg="white")
-        img_label.grid(row=i // cols * 2, column=i % cols, padx=5, pady=5)
-        line_segment_images.append(img_tk)
-
-    return grid_window
-
-def create_text_window():
-    text_window = Toplevel(root)
-    text_window.title("OCR Results")
-    text_window.geometry("400x600")
-
-    canvas = tk.Canvas(text_window)
-    scrollbar = tk.Scrollbar(text_window, orient="vertical", command=canvas.yview)
-    text_frame = tk.Frame(canvas)
-
-    canvas.configure(yscrollcommand=scrollbar.set)
-    scrollbar.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
-    canvas.create_window((0, 0), window=text_frame, anchor="nw")
-
-    def configure_canvas(event):
-        canvas.configure(scrollregion=canvas.bbox("all"))
-    text_frame.bind("<Configure>", configure_canvas)
-
-    return text_window, text_frame
 
 def process_image_with_line_segmentation():
     global selected_image_path
     path_label.config(text=f"Path: {selected_image_path}")
     if not selected_image_path:
-        status_label.config(text="⚠ Please select an image first.")
+        status_label.config(text="⚠ Please select a directory")
         return
 
     status_label.config(text="Running Line Segmentation...")
@@ -162,40 +162,8 @@ def process_image_with_line_segmentation():
 
     models.process_all_images()
 
-    # Get the parent directory of the selected image
-    base_dir = os.path.dirname(selected_image_path)
-    file_paths = []
-    
-    # Recursively walk through all subdirectories of base_dir
-    for root_dir, dirs, files in os.walk(base_dir):
-        file_paths.extend(
-            os.path.join(root_dir, filename)
-            for filename in files
-            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif'))
-        )
-
-    if not file_paths:
-        status_label.config(text=f"⚠ No images found in subdirectories of {base_dir}.")
-        return
-
-    # Debug: Print found image paths
-    for path in file_paths:
-        print(f"Found image: {path}")
-
-    global line_segment_images
-    line_segment_images.clear()
-
-    for filepath in file_paths:
-        print(f"filepath = {filepath}")
-
-    display_images_immediately(file_paths)
-    text_window, text_frame = create_text_window()
-
-    # Start OCR processing thread
-    # threading.Thread(target=process_ocr_worker, args=(file_paths,), daemon=True).start()
-
-    # Start polling queue in main thread to update GUI
-    # root.after(100, update_text_display_periodically, text_frame, text_window)
+    status_label.config(text="Line Segmentation Complete")
+    root.update_idletasks()
 
 def process_image_with_yolo():
     global selected_image_path
@@ -326,6 +294,9 @@ yolo_btn.pack()
 
 line_segment_btn = tk.Button(root, text="Run line segmentation", command=process_image_with_line_segmentation)
 line_segment_btn.pack()
+
+OCR_btn = tk.Button(root, text="Apply OCR", command=generate_ocr_result)
+OCR_btn.pack()
 
 show_results_btn = tk.Button(root, text="Show Results", command=show_results)
 show_results_btn.pack()

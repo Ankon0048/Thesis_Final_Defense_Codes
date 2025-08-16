@@ -6,6 +6,9 @@ import threading
 from queue import Queue
 from model_module import Models  # your custom module
 import shutil
+from uncurve import uncurve_text_tight
+import cv2
+import uuid
 
 # CONSTANT PATHS
 yolo_output_dir = r"kaggle/output/"
@@ -179,6 +182,40 @@ def process_image_with_yolo():
     selected_image_path = showing_yolo_results_dir
     path_label.config(text=f"Path: {selected_image_path}")
 
+
+def uncurve_text():
+    global selected_image_path
+
+    if not selected_image_path:
+        status_label.config(text="⚠ Please select an image first")
+        return
+
+    # Generate a random UUID (Version 4)
+    random_uuid = uuid.uuid4()
+
+    # Convert the UUID object to a string for display or storage
+    uuid_string = str(random_uuid)
+
+    output_path = f"kaggle/output/uncurved_outputs/{uuid_string}.jpg" # Output path for uncurved image
+    # print(output_path)
+    image = cv2.imread(selected_image_path)
+
+    # Check if image was loaded
+    if image is None:
+        raise FileNotFoundError(f"Image not found at {selected_image_path}")
+
+    # Set parameters
+    n_splines = 6           # You can try 6, 12, or more depending on curve complexity
+    show_plot = False         # Set to False to suppress matplotlib plots
+    arc_equal = True         # If True, samples equal arc-length segments
+
+    uncurve_text_tight(
+        image,
+        output_path=output_path,
+        show_plot=show_plot,
+        arc_equal=arc_equal
+    )
+
 def select_image():
     global selected_image_path
     file_path = filedialog.askopenfilename(
@@ -294,6 +331,9 @@ yolo_btn.pack()
 
 line_segment_btn = tk.Button(root, text="Run line segmentation", command=process_image_with_line_segmentation)
 line_segment_btn.pack()
+
+uncurve_btn = tk.Button(root, text="Uncurve Text", command=uncurve_text)
+uncurve_btn.pack()
 
 OCR_btn = tk.Button(root, text="Apply OCR", command=generate_ocr_result)
 OCR_btn.pack()

@@ -23,6 +23,12 @@ import torch
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 import os
 from line_segmentation import calculate_projection_profile_and_crop_lines_with_lines
+import pkg_resources
+from symspellpy import SymSpell
+from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+import pkg_resources
+from symspellpy import SymSpell
+from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
 
 # Constants
@@ -41,14 +47,20 @@ input_image_path = ""
 class Models:
     def __init__(self):
         self.yolo_model = YOLO("kaggle/input/weights/last_100.pt")
+        self.sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
+        dictionary_path = pkg_resources.resource_filename(
+            "symspellpy", "frequency_dictionary_en_82_765.txt"
+        )
+        self.sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
+        self.tokenizer = AutoTokenizer.from_pretrained("oliverguhr/fullstop-punctuation-multilang-large")
+        self.nlp_model = AutoModelForTokenClassification.from_pretrained("oliverguhr/fullstop-punctuation-multilang-large")
+        self.punct_pipeline = pipeline("token-classification", model=self.nlp_model, tokenizer=self.tokenizer, aggregation_strategy="simple")
         self.hvp_model = SimpleCNN().to(DEVICE)
         self.hvp_model.load_state_dict(torch.load("kaggle/input/weights/final_model_weights_HvP.pth", map_location=DEVICE))
         self.printed_processor = TrOCRProcessor.from_pretrained(printed_model_id)
         self.printed_model = VisionEncoderDecoderModel.from_pretrained(printed_model_id).to(DEVICE)
         self.handwritten_processor = TrOCRProcessor.from_pretrained(hand_written_model_id)
         self.handwritten_model = VisionEncoderDecoderModel.from_pretrained(hand_written_model_id).to(DEVICE)
-        self.t5_tokenizer = T5Tokenizer.from_pretrained("vennify/t5-base-grammar-correction")
-        self.t5_model = T5ForConditionalGeneration.from_pretrained("vennify/t5-base-grammar-correction").to(DEVICE)
             # Test transforms
         self.test_transform = transforms.Compose([
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
@@ -142,12 +154,30 @@ class Models:
         # print(f"{os.path.basename(image_path)} -> {generated_text}")
         return generated_text
 
-    def restore_case_and_punctuation(self,text: str, max_length=128):
-        input_text = "grammar: " + text.lower()
-        input_ids = self.t5_tokenizer.encode(input_text, return_tensors="pt").to(DEVICE)
-        outputs = self.t5_model.generate(input_ids, max_length=max_length, num_beams=4, early_stopping=True)
-        corrected = self.t5_tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return corrected
+    def restore_case_and_punctuation(self,text: str):
+        # Step 1: Spell Correction
+        suggestions = self.sym_spell.lookup_compound(text, max_edit_distance=2)
+        corrected_text = suggestions[0].term if suggestions else text
+        
+        # Step 2: Case Restoration (simple heuristic)
+        corrected_text = corrected_text.strip()
+        if corrected_text:  
+            corrected_text = corrected_text[0].upper() + corrected_text[1:]
+        corrected_text = corrected_text.replace(" i ", " I ")
+        
+        # Step 3: Punctuation Restoration
+        tokens = corrected_text.split()
+        predictions = self.punct_pipeline(corrected_text)
+        
+        restored_text = ""
+        for i, token in enumerate(tokens):
+            restored_text += token
+            # Add punctuation if predicted
+            if i < len(predictions) and predictions[i]['word'] in [".", ",", "?", "!"]:
+                restored_text += predictions[i]['word']
+            restored_text += " "
+        
+        return restored_text.strip()
     
     def OCR_output(self):
         folder_dir = "kaggle/output/cropped_outputs_line/cropped_outputs/"
